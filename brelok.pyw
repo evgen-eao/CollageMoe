@@ -78,6 +78,9 @@ class KawaiiCollageMaker:
                                    self.window_height - 97,
                                    outline="#FFB3C6", width=3, dash=(5,5))
 
+        # Привязываем обработчик кликов для удаления изображений
+        self.canvas.bind("<Button-3>", self.remove_image)
+
         btn_style = {
             'bg': '#FFB3C6',
             'fg': '#A8377F',
@@ -101,7 +104,6 @@ class KawaiiCollageMaker:
         self.update_display()
 
     def nya_drop(self, event):
-        # (ノ*°▽°*) Обрабатываем перетаскивание файлов
         files = self.root.tk.splitlist(event.data)
         for f in files:
             if len(self.images) >= self.max_images:
@@ -111,28 +113,26 @@ class KawaiiCollageMaker:
                 try:
                     with Image.open(f) as img:
                         processed_img = self.process_image(img)
-                        self.images.append(processed_img)  # Сразу добавляем обработанное изображение
+                        self.images.append(processed_img)
                     self.update_display()
                     self.root.title(f"CollageMoe (✧ω✧)♪ {len(self.images)}/{self.max_images}")
                 except Exception as e:
                     print(f"(╥﹏╥) Ошибка в {f}: {e}")
 
     def process_image(self, img):
-        # (´･ᴗ･`) Поворачиваем картинку если она в портретной ориентации
         img_ratio = img.width / img.height
         target_ratio = self.image_size[0] / self.image_size[1]
-
         if (img_ratio > 1) != (target_ratio > 1):
             img = img.rotate(90, expand=True)
-
-        # ～(^∇^〜） Обрезаем картинку по заданному размеру с высоким качеством
         return ImageOps.fit(img, self.image_size, method=Image.LANCZOS, centering=(0.5, 0.5))
 
     def update_display(self):
-        # (◕ᴗ◕✿) Обновляем превью коллажа
         self.canvas.delete("preview")
         self.temp_canvas = Image.new('RGB', self.canvas_size, (255, 255, 255))
         draw = ImageDraw.Draw(self.temp_canvas)
+
+        # Сохраняем координаты изображений для обработки кликов
+        self.image_positions = []  # Список кортежей: (индекс, x_min, y_min, x_max, y_max)
 
         if self.images:
             max_per_row = self.canvas_size[0] // self.image_size[0]
@@ -153,14 +153,41 @@ class KawaiiCollageMaker:
                     outline="#c0c0c0", width=border_width
                 )
 
-        # (๑˃ᴗ˂)ﻭ Масштабируем превью с высоким качеством
+                # Сохраняем координаты в масштабе исходного холста
+                self.image_positions.append((i, x, y, x + self.image_size[0], y + self.image_size[1]))
+
         preview_width = self.window_width - 40
         preview_height = int(self.temp_canvas.height * (preview_width / self.temp_canvas.width))
+        self.preview_scale = preview_width / self.canvas_size[0]  # Коэффициент масштабирования
         preview_img = self.temp_canvas.resize((preview_width, preview_height), Image.LANCZOS)
         self.tk_img = ImageTk.PhotoImage(preview_img)
         pos_x = (self.window_width - preview_width) // 2
         pos_y = 20
+        self.preview_x = pos_x  # Сохраняем смещение превью
+        self.preview_y = pos_y
         self.canvas.create_image(pos_x, pos_y, anchor=tk.NW, image=self.tk_img, tags="preview")
+
+    def remove_image(self, event):
+        # (ノ*°▽°*) Обрабатываем клик для удаления изображения
+        if not self.images or not hasattr(self, 'image_positions'):
+            return
+
+        # Координаты клика относительно Canvas
+        click_x = event.x
+        click_y = event.y
+
+        # Преобразуем координаты клика в масштаб исходного холста
+        canvas_x = (click_x - self.preview_x) / self.preview_scale
+        canvas_y = (click_y - self.preview_y) / self.preview_scale
+
+        # Проверяем, попал ли клик в область изображения
+        for idx, x_min, y_min, x_max, y_max in self.image_positions:
+            if x_min <= canvas_x <= x_max and y_min <= canvas_y <= y_max:
+                # Удаляем изображение из списка
+                del self.images[idx]
+                self.update_display()
+                self.root.title(f"CollageMoe (✧ω✧)♪ {len(self.images)}/{self.max_images}")
+                break
 
     def save_kawaii(self):
         if not self.images:
